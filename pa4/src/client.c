@@ -23,7 +23,7 @@ int send_file(int socket, const char *filename) {
     char buffer[BUFFER_SIZE];
     size_t bytesRead;
     while ((bytesRead = fread(buffer, 1, sizeof(buffer), file)) > 0) {
-        int ret = send(socket, buffer, bytesRead, 0);
+        ret = send(socket, buffer, bytesRead, 0);
         if (ret == -1) {
             perror("send file data error");
             fclose(file);
@@ -55,7 +55,7 @@ int receive_file(int socket, const char *filename) {
     char buffer[BUFFER_SIZE];
     size_t bytesRead;
     while ((bytesRead = recv(socket, buffer, sizeof(buffer), 0)) > 0) {
-        int ret = fwrite(buffer, 1, bytesRead, file);
+        ret = fwrite(buffer, 1, bytesRead, file);
         if (ret != bytesRead) {
             perror("write to file error");
             fclose(file);
