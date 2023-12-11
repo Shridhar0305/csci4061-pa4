@@ -5,21 +5,65 @@
 
 int send_file(int socket, const char *filename) {
     // Open the file
+    FILE *file = fopen(filename, "r+");
+    if(file == NULL){
+        perror("Error opening file\n");
+        exit(-1);
+    }
 
     // Set up the request packet for the server and send it
-
+    packet_t response;
+    int ret = send(socket, &response, sizeof(packet_t), 0);
+    if(ret == -1){
+        perror("send error");
+        fclose(file);
+        exit(-1);
+    }
     // Send the file data
+    char buffer[BUFFER_SIZE];
+    size_t bytesRead;
+    while ((bytesRead = fread(buffer, 1, sizeof(buffer), file)) > 0) {
+        int ret = send(socket, buffer, bytesRead, 0);
+        if (ret == -1) {
+            perror("send file data error");
+            fclose(file);
+            exit(-1);
+        }
+    }
+    fclose(file);
     return 0;
 }
 
 int receive_file(int socket, const char *filename) {
     // Open the file
-
+    FILE *file = fopen(filename, "w+");
+    if(file == NULL){
+        perror("Error opening file\n");
+        exit(-1);
+    }
     // Receive response packet
+    packet_t response;
+    int ret = recv(socket, &response, sizeof(packet_t), 0);
+    if(ret == -1){
+        perror("recv error");
+        fclose(file);
+        exit(-1);
+    }
 
     // Receive the file data
-
     // Write the data to the file
+    char buffer[BUFFER_SIZE];
+    size_t bytesRead;
+    while ((bytesRead = recv(socket, buffer, sizeof(buffer), 0)) > 0) {
+        int ret = fwrite(buffer, 1, bytesRead, file);
+        if (ret != bytesRead) {
+            perror("write to file error");
+            fclose(file);
+            exit(-1);
+        }
+    }
+
+    fclose(file);
     return 0;
 }
 
@@ -54,7 +98,7 @@ int main(int argc, char* argv[]) {
     int queue_length = 0;
     DIR *d;
     struct dirent *dir;
-    d = opendir(output_dir);
+    d = opendir(image_dir);
     if(d == NULL){
         perror("Unable to open directory");
     }
@@ -77,13 +121,44 @@ int main(int argc, char* argv[]) {
         perror("send error");
     }
     // Send the image data to the server
+    for(int i = 0; i < queue_length; i++){
+        ret = send_file(sockfd, queue[i].file_name);
+        if (ret == -1) {
+            fprintf(stderr, "Error sending file: %s\n", queue[i].file_name);
+            exit(-1);
+        }
     
-    // Check that the request was acknowledged
-
-    // Receive the processed image and save it in the output dir
-
-    // Terminate the connection once all images have been processed
-
+        // Check that the request was acknowledged
+        packet_t ack_packet;
+        ret = recv(sockfd, &ack_packet, sizeof(packet_t), 0);
+        if (ret == -1) {
+            perror("receive acknowledgment error");
+            close(sockfd);
+            exit(-1);
+        }
+        if (ack_packet.operation != IMG_OP_ACK) {
+            fprintf(stderr, "Unexpected acknowledgment from server\n");
+            close(sockfd);
+            exit(-1);
+        }
+        // Receive the processed image and save it in the output dir
+        ret = receive_file(sockfd, output_dir);
+        if (ret == -1) {
+            fprintf(stderr, "Error receiving file: %s\n", queue[i].file_name);
+            exit(-1);
+        }
+        // Terminate the connection once all images have been processed
+        if (i == queue_length - 1) {
+            packet_t termination_packet;
+            termination_packet.operation = IMG_OP_EXIT;
+            ret = send(sockfd, &termination_packet, sizeof(packet_t), 0);
+            if (ret == -1) {
+                perror("send termination error");
+                close(sockfd);
+                exit(-1);
+            }
+        }
+    }
     // Release any resources
     close(sockfd);
     return 0;
