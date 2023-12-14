@@ -14,7 +14,13 @@ void *clientHandler(void *socket) {
         char data[PACKETSZ];
         memset(data, 0, PACKETSZ);
         int ret = recv(socket_fd, data, PACKETSZ, 0);
-        if (ret == 0) continue;
+        if (ret == -1) {
+            perror("recv error");
+            exit(-1);
+        }
+        if (ret == 0) {
+            continue;
+        }
         packet_t *packet = deserializeData(data);
 
         // Determine the packet operation and flags
@@ -29,8 +35,16 @@ void *clientHandler(void *socket) {
             char *image = (char *) malloc(packet->size);
             memset(image, 0, packet->size);
             ret = recv(socket_fd, image, packet->size, 0);
+            if (ret == -1) {
+                perror("recv error");
+                exit(-1);
+            }
             const char *input = "input.png";
             FILE *file = fopen(input, "w");
+            if (file == NULL) {
+                perror("Error opening file");
+                exit(-1);
+            }
             fwrite(image, 1, packet->size, file);
             fclose(file);
 
@@ -109,28 +123,26 @@ int main(int argc, char* argv[]) {
     // Accept connections and create the client handling threads
     struct sockaddr_in clientaddr;
     socklen_t clientaddr_len = sizeof(clientaddr);
-    conn_fd = accept(listen_fd, (struct sockaddr *) &clientaddr, &clientaddr_len);
-    if(conn_fd == -1){
-        perror("accept error");
+    while (1) {
+        conn_fd = accept(listen_fd, (struct sockaddr *) &clientaddr, &clientaddr_len);
+        if(conn_fd == -1){
+            perror("accept error");
+        }
+        pthread_t proc_thread;
+        pthread_create(&proc_thread, NULL, (void *)clientHandler, (void *)&conn_fd);
+        pthread_detach(proc_thread);
     }
-
-    /*pthread_t proc_thread;
-    pthread_create(&proc_thread, NULL, (void *)clientHandler, (void *)&conn_fd);
-    printf("[SERVER]: thread created for client\n");
-
-    pthread_join(proc_thread, NULL);*/
-    
     // For intermediate, just accept one package then exit
-    packet_t package;
+    /*packet_t package;
     ret = recv(conn_fd, &package, sizeof(packet_t), 0);
     if(ret == -1){
         perror("recv error");
     }else{
         printf("package received!\n");
-    }
+    }*/
 
     // Release any resources
-    close(conn_fd);
+    close(conn_fd); 
     close(listen_fd);
     return 0;
 }
