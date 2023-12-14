@@ -99,13 +99,15 @@ int main(int argc, char* argv[]) {
     DIR *d;
     struct dirent *dir;
     d = opendir(image_dir);
+    request_t *ptr;
     if(d == NULL){
         perror("Unable to open directory");
     }
     if(d){
         while((dir = readdir(d)) != NULL){
             if(strlen(dir->d_name) > 4 && !strcmp(dir->d_name + strlen(dir->d_name) - 4, ".png")){
-                strcpy(queue[queue_length].file_name, dir->d_name);
+                ptr = &queue[queue_length]; // Make pointer to object to satisfy strcpy
+                strcpy(ptr->file_name, dir->d_name); 
                 queue[queue_length].rotation_angle = angle;
                 queue_length++;
             }
