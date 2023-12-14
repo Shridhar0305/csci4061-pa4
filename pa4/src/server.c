@@ -1,4 +1,5 @@
 #include "server.h"
+#include "common.h"
 
 #define PORT 9637
 #define MAX_CLIENTS 5
@@ -7,33 +8,37 @@
 
 
 void *clientHandler(void *socket) {
-    processing_args_t *pargs = (processing_args_t *) socket;
-    printf("[SERVER]: client handler\n");
-
+    int socket_fd = *(int *) socket;
     while (1) {
         // Receive packets from the client
-        char data[BUFF_SIZE];
-        memset(data, 0, BUFF_SIZE);
-        recv(pargs->number_worker, data, BUFF_SIZE, 0);
+        char data[PACKETSZ];
+        memset(data, 0, PACKETSZ);
+        int ret = recv(socket_fd, data, PACKETSZ, 0);
+        if (ret == 0) continue;
         packet_t *packet = deserializeData(data);
 
         // Determine the packet operation and flags
         if (packet->operation == IMG_OP_EXIT) {
             free(packet);
-            close(socket);
+            close(socket_fd);
             pthread_exit(NULL);
         }
 
         // Receive the image data using the size
-
-        // Process the image data based on the set of flags
         if (packet->operation == IMG_OP_ROTATE) {
-            printf("%s\n", pargs->file_name);
+            char *image = (char *) malloc(packet->size);
+            memset(image, 0, packet->size);
+            ret = recv(socket_fd, image, packet->size, 0);
+            const char *input = "input.png";
+            FILE *file = fopen(input, "w");
+            fwrite(image, 1, packet->size, file);
+            fclose(file);
+
             int width;
             int height;
             int bpp;
 
-            uint8_t* image_result = stbi_load(socket->filename, &width, &height, &bpp, CHANNEL_NUM);
+            uint8_t* image_result = stbi_load(input, &width, &height, &bpp, CHANNEL_NUM);
 
             uint8_t** img_matrix = (uint8_t **) malloc(sizeof(uint8_t *) * width);
             uint8_t** result_matrix = (uint8_t **) malloc(sizeof(uint8_t *) * width);
@@ -44,6 +49,7 @@ void *clientHandler(void *socket) {
     
             linear_to_image(image_result, img_matrix, width, height);
 
+            // Process the image data based on the set of flags
             if (packet->flags == IMG_FLAG_ROTATE_180) { // need to get angle from struct
                 flip_left_to_right(img_matrix, result_matrix, width, height);
             } else if (packet->flags == IMG_FLAG_ROTATE_270) {
@@ -53,13 +59,15 @@ void *clientHandler(void *socket) {
             uint8_t* img_array = (uint8_t *) malloc(sizeof(uint8_t) * width * height);
             flatten_mat(result_matrix, img_array, width, height);
 
-            if (stbi_write_png(out, width, height, CHANNEL_NUM, img_array, width*CHANNEL_NUM) == 0) {
-                exit(-1);
-            }
+            const char *output = "output.png";
+            stbi_write_png(output, width, height, CHANNEL_NUM, img_array, width*CHANNEL_NUM);
 
-            memset(buf, 0, 1024);
-            memset(out, 0, 1024);
-
+            // Acknowledge the request and return the processed image data
+            packet_t ack;
+            ack.operation = IMG_OP_ACK;
+            ack.flags = packet->flags;
+            ack.size = packet->size;
+            
             for (int i = 0; i < width; i++) {
                 free(img_matrix[i]);
                 free(result_matrix[i]);
@@ -70,9 +78,6 @@ void *clientHandler(void *socket) {
             free(result_matrix);
             free(img_array);
         }
-
-        // Acknowledge the request and return the processed image data
-
         free(packet);
     }
 }
